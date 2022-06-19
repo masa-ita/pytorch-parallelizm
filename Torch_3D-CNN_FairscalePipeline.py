@@ -12,12 +12,12 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 import torch.distributed as dist
-from torch.cuda.amp import autoscale
+from torch.cuda.amp import autocast
 
 import fairscale
 
 
-CUBE_SIZE = 512
+CUBE_SIZE = 256
 NUM_CHANNELS = 4
 NUM_CLASSES = 10
 BATCH_SIZE = 1
@@ -32,7 +32,7 @@ class DummyDataset(torch.utils.data.Dataset):
         self.size = size
     
     def __getitem__(self, index):
-        return np.random.rand(*self.dims).astype(np.float16), np.random.randint(0, self.num_classes)
+        return np.random.rand(*self.dims).astype(np.float32), np.random.randint(0, self.num_classes)
     
     def __len__(self):
         return self.size
@@ -40,11 +40,7 @@ class DummyDataset(torch.utils.data.Dataset):
 
 def get_layers(width=128, height=128, depth=128, channels=1, num_classes=1):
     layers = torch.nn.Sequential(
-        torch.nn.Conv3d(channels, 12, 3),
-        torch.nn.ReLU(),
-        torch.nn.MaxPool3d(2),
-        torch.nn.BatchNorm3d(12),
-        torch.nn.Conv3d(12, 32, 3),
+        torch.nn.Conv3d(channels, 32, 3),
         torch.nn.ReLU(),
         torch.nn.MaxPool3d(2),
         torch.nn.BatchNorm3d(32),
@@ -56,9 +52,13 @@ def get_layers(width=128, height=128, depth=128, channels=1, num_classes=1):
         torch.nn.ReLU(),
         torch.nn.MaxPool3d(2),
         torch.nn.BatchNorm3d(128),
+        torch.nn.Conv3d(128, 256, 3),
+        torch.nn.ReLU(),
+        torch.nn.MaxPool3d(2),
+        torch.nn.BatchNorm3d(256),
         torch.nn.AdaptiveAvgPool3d((1,1,1)),
         torch.nn.Flatten(),
-        torch.nn.Linear(128, 128),
+        torch.nn.Linear(256, 128),
         torch.nn.ReLU(),
         torch.nn.Dropout(p=0.3),
         torch.nn.Linear(128, num_classes)
@@ -70,9 +70,9 @@ def train(dataloader, model, loss_fn, optimizer):
     size = len(dataloader.dataset)
     model.train()
     for batch, (X, y) in enumerate(dataloader):
-        device = model.device[0]
+        device = model.devices[0]
         # Compute prediction error
-        with autoscale():
+        with autocast():
             pred = model(X.to(device))
             loss = loss_fn(pred.to(device), y.to(device))
 
@@ -102,4 +102,4 @@ def train_pipe(balance):
     train(train_loader, net, loss_fn, optimizer)
 
 if __name__ == '__main__':
-    train_pipe([1,1,10,10])
+    train_pipe([1,1,1,19])
