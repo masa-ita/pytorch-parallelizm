@@ -12,6 +12,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 import torch.distributed as dist
+from torch.cuda.amp import autoscale
 
 import fairscale
 
@@ -39,11 +40,15 @@ class DummyDataset(torch.utils.data.Dataset):
 
 def get_layers(width=128, height=128, depth=128, channels=1, num_classes=1):
     layers = torch.nn.Sequential(
-        torch.nn.Conv3d(channels, 32, 3),
+        torch.nn.Conv3d(channels, 12, 3),
+        torch.nn.ReLU(),
+        torch.nn.MaxPool3d(2),
+        torch.nn.BatchNorm3d(12),
+        torch.nn.Conv3d(12, 32, 3),
         torch.nn.ReLU(),
         torch.nn.MaxPool3d(2),
         torch.nn.BatchNorm3d(32),
-        torch.nn.Conv3d(64, 64, 3),
+        torch.nn.Conv3d(32, 64, 3),
         torch.nn.ReLU(),
         torch.nn.MaxPool3d(2),
         torch.nn.BatchNorm3d(64),
@@ -51,13 +56,9 @@ def get_layers(width=128, height=128, depth=128, channels=1, num_classes=1):
         torch.nn.ReLU(),
         torch.nn.MaxPool3d(2),
         torch.nn.BatchNorm3d(128),
-        torch.nn.Conv3d(128, 256, 3),
-        torch.nn.ReLU(),
-        torch.nn.MaxPool3d(2),
-        torch.nn.BatchNorm3d(256),
         torch.nn.AdaptiveAvgPool3d((1,1,1)),
         torch.nn.Flatten(),
-        torch.nn.Linear(256, 128),
+        torch.nn.Linear(128, 128),
         torch.nn.ReLU(),
         torch.nn.Dropout(p=0.3),
         torch.nn.Linear(128, num_classes)
@@ -71,8 +72,9 @@ def train(dataloader, model, loss_fn, optimizer):
     for batch, (X, y) in enumerate(dataloader):
         device = model.device[0]
         # Compute prediction error
-        pred = model(X.to(device))
-        loss = loss_fn(pred.to(device), y.to(device))
+        with autoscale():
+            pred = model(X.to(device))
+            loss = loss_fn(pred.to(device), y.to(device))
 
         # Backpropagation
         optimizer.zero_grad()
@@ -86,8 +88,6 @@ def train(dataloader, model, loss_fn, optimizer):
 
 
 def train_pipe(balance):
-    torch.manual_seed(1234)
-
     net = get_layers(width=CUBE_SIZE, height=CUBE_SIZE, depth=CUBE_SIZE, 
                      channels=NUM_CHANNELS, num_classes=NUM_CLASSES)
     net = fairscale.nn.Pipe(net, balance=balance)
@@ -97,9 +97,9 @@ def train_pipe(balance):
     train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=BATCH_SIZE)
     
     optimizer = optim.SGD(net.parameters(), lr=0.001)
-    loss_fn = F.CrossEntropyLoss
+    loss_fn = torch.nn.CrossEntropyLoss()
     
     train(train_loader, net, loss_fn, optimizer)
 
 if __name__ == '__main__':
-    train_pipe([1,1,9,10])
+    train_pipe([1,1,10,10])
