@@ -17,7 +17,7 @@ from deepspeed.pipe import PipelineModule
 from deepspeed.utils import RepeatingLoader
 
 
-CUBE_SIZE = 256
+CUBE_SIZE = 512
 NUM_CHANNELS = 4
 NUM_CLASSES = 10
 
@@ -80,10 +80,10 @@ def get_args():
 
 def get_layers(width=128, height=128, depth=128, channels=1, num_classes=1):
     layers = torch.nn.Sequential(
-        torch.nn.Conv3d(channels, 64, 3),
+        torch.nn.Conv3d(channels, 32, 3),
         torch.nn.ReLU(),
         torch.nn.MaxPool3d(2),
-        torch.nn.BatchNorm3d(64),
+        torch.nn.BatchNorm3d(32),
         torch.nn.Conv3d(64, 64, 3),
         torch.nn.ReLU(),
         torch.nn.MaxPool3d(2),
