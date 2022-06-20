@@ -27,19 +27,19 @@ class DummyDataset(torch.utils.data.Dataset):
         self.size = size
     
     def __getitem__(self, index):
-        return torch.rand(*self.data_dims, dtype=torch.float32), torch.randint(0, self.num_classes)
+        return torch.rand(*self.data_dims, dtype=torch.float16), torch.randint(0, self.num_classes, (1,))[0]
     
     def __len__(self):
         return self.size
 
 
-def dummy_trainset(local_rank, cube_size):
+def dummy_trainset(local_rank, cube_size, num_channels, num_classes):
     dist.barrier()
     if local_rank != 0:
         dist.barrier()
     
-    trainset = DummyDataset(dims=(NUM_CHANNELS, cube_size, cube_size, cube_size), 
-                            num_classes=10, size=500)
+    trainset = DummyDataset(data_dims=(num_channels, cube_size, cube_size, cube_size), 
+                            num_classes=num_classes, size=500)
 
     if local_rank == 0:
         dist.barrier()
@@ -54,7 +54,7 @@ def get_args():
     parser.add_argument('-s',
                         '--steps',
                         type=int,
-                        default=100,
+                        default=50,
                         help='quit after this many steps')
     parser.add_argument('-p',
                         '--pipeline-parallel-size',
@@ -73,7 +73,7 @@ def get_args():
                         type=int,
                         default=128,
                         help='dummy data cube size')
-    parser.add_argument('--num_channel',
+    parser.add_argument('--num_channels',
                         type=int,
                         default=4,
                         help='dummy data channel size')
@@ -92,7 +92,7 @@ def get_layers(width=128, height=128, depth=128, channels=1, num_classes=1):
         torch.nn.ReLU(),
         torch.nn.MaxPool3d(2),
         torch.nn.BatchNorm3d(32),
-        torch.nn.Conv3d(64, 64, 3),
+        torch.nn.Conv3d(32, 64, 3),
         torch.nn.ReLU(),
         torch.nn.MaxPool3d(2),
         torch.nn.BatchNorm3d(64),
@@ -120,7 +120,7 @@ def train_base(args):
     net = get_layers(width=args.cube_size, height=args.cube_size, depth=args.cube_size, 
                      channels=args.num_channels, num_classes=args.num_classes)
 
-    trainset = dummy_trainset(args.local_rank, args.cube_size)
+    trainset = dummy_trainset(args.local_rank, args.cube_size, args.num_channels, args.num_classes)
 
     engine, _, dataloader, __ = deepspeed.initialize(
         args=args,
@@ -155,7 +155,7 @@ def train_base(args):
 
 
 
-def train_pipe(args, part='type:Conv3d'):
+def train_pipe(args):
     torch.manual_seed(args.seed)
     deepspeed.runtime.utils.set_random_seed(args.seed)
 
@@ -164,10 +164,10 @@ def train_pipe(args, part='type:Conv3d'):
     net = PipelineModule(layers=net,
                          loss_fn=torch.nn.CrossEntropyLoss(),
                          num_stages=args.pipeline_parallel_size,
-                         partition_method=part,
+                         partition_method=args.pipeline_part,
                          activation_checkpoint_interval=0)
 
-    trainset = dummy_trainset(args.local_rank, args.cube_size)
+    trainset = dummy_trainset(args.local_rank, args.cube_size, args.num_channels, args.num_classes)
 
     engine, _, _, _ = deepspeed.initialize(
         args=args,
