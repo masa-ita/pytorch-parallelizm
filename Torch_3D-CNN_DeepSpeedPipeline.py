@@ -17,37 +17,29 @@ from deepspeed.pipe import PipelineModule
 from deepspeed.utils import RepeatingLoader
 
 
-CUBE_SIZE = 512
-NUM_CHANNELS = 4
-NUM_CLASSES = 10
-
-
-categories = ['bathtub', 'bed', 'chair', 'desk', 'dresser',
-              'monitor', 'night_stand', 'sofa', 'table', 'toilet']
-
-
 deepspeed.init_distributed()
 
 class DummyDataset(torch.utils.data.Dataset):
 
-    def __init__(self, dims=(4, 128, 128, 128), num_classes=10, size=1000):
-        self.dims = dims
+    def __init__(self, data_dims=(4, 128, 128, 128), num_classes=10, size=1000):
+        self.data_dims = data_dims
         self.num_classes = num_classes
         self.size = size
     
     def __getitem__(self, index):
-        return np.random.rand(*self.dims).astype(np.float16), np.random.randint(0, self.num_classes)
+        return torch.rand(*self.data_dims, dtype=torch.float32), torch.randint(0, self.num_classes)
     
     def __len__(self):
         return self.size
 
 
-def dummy_trainset(local_rank):
+def dummy_trainset(local_rank, cube_size):
     dist.barrier()
     if local_rank != 0:
         dist.barrier()
     
-    trainset = DummyDataset(dims=(NUM_CHANNELS, CUBE_SIZE, CUBE_SIZE, CUBE_SIZE), num_classes=10, size=500)
+    trainset = DummyDataset(dims=(NUM_CHANNELS, cube_size, cube_size, cube_size), 
+                            num_classes=10, size=500)
 
     if local_rank == 0:
         dist.barrier()
@@ -73,6 +65,22 @@ def get_args():
                         type=str,
                         default='nccl',
                         help='distributed backend')
+    parser.add_argument('--pipeline_part',
+                        type=str,
+                        default='parameters',
+                        help='pipeline partitioning')
+    parser.add_argument('--cube_size',
+                        type=int,
+                        default=128,
+                        help='dummy data cube size')
+    parser.add_argument('--num_channel',
+                        type=int,
+                        default=4,
+                        help='dummy data channel size')
+    parser.add_argument('--num_classes',
+                        type=int,
+                        default=10,
+                        help='dummy data number of classes')
     parser.add_argument('--seed', type=int, default=1138, help='PRNG seed')
     parser = deepspeed.add_config_arguments(parser)
     args = parser.parse_args()
@@ -109,10 +117,10 @@ def get_layers(width=128, height=128, depth=128, channels=1, num_classes=1):
 def train_base(args):
     torch.manual_seed(args.seed)
 
-    net = get_layers(width=CUBE_SIZE, height=CUBE_SIZE, depth=CUBE_SIZE, 
-                     channels=NUM_CHANNELS, num_classes=NUM_CLASSES)
+    net = get_layers(width=args.cube_size, height=args.cube_size, depth=args.cube_size, 
+                     channels=args.num_channels, num_classes=args.num_classes)
 
-    trainset = dummy_trainset(args.local_rank)
+    trainset = dummy_trainset(args.local_rank, args.cube_size)
 
     engine, _, dataloader, __ = deepspeed.initialize(
         args=args,
@@ -151,15 +159,15 @@ def train_pipe(args, part='type:Conv3d'):
     torch.manual_seed(args.seed)
     deepspeed.runtime.utils.set_random_seed(args.seed)
 
-    net = get_layers(width=CUBE_SIZE, height=CUBE_SIZE, depth=CUBE_SIZE, 
-                     channels=NUM_CHANNELS, num_classes=NUM_CLASSES)
+    net = get_layers(width=args.cube_size, height=args.cube_size, depth=args.cube_size, 
+                     channels=args.num_channels, num_classes=args.num_classes)
     net = PipelineModule(layers=net,
                          loss_fn=torch.nn.CrossEntropyLoss(),
                          num_stages=args.pipeline_parallel_size,
                          partition_method=part,
                          activation_checkpoint_interval=0)
 
-    trainset = dummy_trainset(args.local_rank)
+    trainset = dummy_trainset(args.local_rank, args.cube_size)
 
     engine, _, _, _ = deepspeed.initialize(
         args=args,
