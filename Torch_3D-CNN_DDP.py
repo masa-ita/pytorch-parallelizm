@@ -4,7 +4,7 @@ import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
 import torch.multiprocessing as mp
 
-CUBE_SIZE = 128
+CUBE_SIZE = 256
 NUM_CHANNELS = 4
 NUM_CLASSES = 10
 BATCH_SIZE = 1
@@ -12,14 +12,13 @@ BATCH_SIZE = 1
 WORLD_SIZE = 1
 EPOCHS = 2
 
-# mp.set_start_method('spawn', force=True) 
 
 def setup(rank, world_size):
     os.environ['MASTER_ADDR'] = 'localhost'
     os.environ['MASTER_PORT'] = '12355'
 
     # initialize the process group
-    dist.init_process_group("threedee", rank=rank, world_size=world_size)
+    dist.init_process_group("gloo", rank=rank, world_size=world_size)
 
 def cleanup():
     dist.destroy_process_group()
@@ -86,7 +85,7 @@ def train(
                   channels=NUM_CHANNELS, num_classes=NUM_CLASSES).to(rank)
     model = DDP(model, device_ids=[rank])
     train_ds = DummyDataset(data_dims=(NUM_CHANNELS, CUBE_SIZE, CUBE_SIZE, CUBE_SIZE), 
-                            num_classes=NUM_CLASSES, size=1000)
+                            num_classes=NUM_CLASSES, size=100)
 
     dataloader = torch.utils.data.DataLoader(train_ds, batch_size=BATCH_SIZE, shuffle=True)
     loss_fn = torch.nn.CrossEntropyLoss()

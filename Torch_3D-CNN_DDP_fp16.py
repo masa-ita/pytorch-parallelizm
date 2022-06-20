@@ -3,9 +3,8 @@ import torch
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
 import torch.multiprocessing as mp
-
-from fairscale.optim.oss import OSS
-from fairscale.nn.data_parallel import ShardedDataParallel as ShardedDDP
+from torch.cuda.amp import autocast
+from torch.cuda.amp import GradScaler
 
 
 CUBE_SIZE = 256
@@ -29,7 +28,7 @@ def cleanup():
 
 class DummyDataset(torch.utils.data.Dataset):
 
-    def __init__(self, data_dims=(4, 128, 128, 128), num_classes=10, size=100):
+    def __init__(self, data_dims=(4, 128, 128, 128), num_classes=10, size=1000):
         self.data_dims = data_dims
         self.num_classes = num_classes
         self.size = size
@@ -39,6 +38,7 @@ class DummyDataset(torch.utils.data.Dataset):
     
     def __len__(self):
         return self.size
+
 
 
 class ThreeDCNN(torch.nn.Module):
@@ -73,50 +73,46 @@ class ThreeDCNN(torch.nn.Module):
         logits = self.layers(x)
         return logits
     
+
 def train(
     rank: int,
     world_size: int,
     epochs: int):
 
     # process group init
-    print(f"Running ShardedDDP example on rank {rank}.")
+    print(f"Running DDP with fp16 example on rank {rank}.")
     setup(rank, world_size)
-
+    
     # Problem statement
     model = ThreeDCNN(width=CUBE_SIZE, height=CUBE_SIZE, depth=CUBE_SIZE, 
                   channels=NUM_CHANNELS, num_classes=NUM_CLASSES).to(rank)
-
-    # Wrap the model into ShardedDDP, which will reduce gradients to the proper ranks
-    model = ShardedDDP(model, optimizer)
-
+    model = DDP(model, device_ids=[rank])
     train_ds = DummyDataset(data_dims=(NUM_CHANNELS, CUBE_SIZE, CUBE_SIZE, CUBE_SIZE), 
-                            num_classes=NUM_CLASSES, size=1000)
+                            num_classes=NUM_CLASSES, size=100)
+
     dataloader = torch.utils.data.DataLoader(train_ds, batch_size=BATCH_SIZE, shuffle=True)
     loss_fn = torch.nn.CrossEntropyLoss()
 
     # optimizer specific arguments e.g. LR, momentum, etc...
     base_optimizer_arguments = { "lr": 1e-4}
-
-    # Wrap a base optimizer into OSS
-    base_optimizer = torch.optim.SGD  # any pytorch compliant optimizer
-    optimizer = OSS(
+    optimizer = torch.optim.SGD(
         params=model.parameters(),
-        optim=base_optimizer,
         **base_optimizer_arguments)
 
-
     # Any relevant training loop, nothing specific to OSS. For example:
+    scaler = GradScaler()
     model.train()
     for e in range(epochs):
         for (data, target) in dataloader:
             data, target = data.to(rank), target.to(rank)
             # Train
             model.zero_grad()
-            outputs = model(data)
-            loss = loss_fn(outputs, target)
-            loss.backward()
-            optimizer.step()
-            
+            with autocast():
+                outputs = model(data)
+                loss = loss_fn(outputs, target)
+            scaler.scale(loss).backward()
+            scaler.step(optimizer)
+            scaler.update()
     cleanup()
             
 def run_demo(demo_fn, world_size, epochs):

@@ -13,6 +13,7 @@ import torch.nn.functional as F
 import torch.optim as optim
 import torch.distributed as dist
 from torch.cuda.amp import autocast
+from torch.cuda.amp import GradScaler
 
 import fairscale
 
@@ -69,6 +70,7 @@ def get_layers(width=128, height=128, depth=128, channels=1, num_classes=1):
 def train(dataloader, model, loss_fn, optimizer):
     size = len(dataloader.dataset)
     model.train()
+    scaler = GradScaler()
     for batch, (X, y) in enumerate(dataloader):
         device = model.devices[0]
         # Compute prediction error
@@ -78,8 +80,9 @@ def train(dataloader, model, loss_fn, optimizer):
 
         # Backpropagation
         optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
+        scaler.scale(loss).backward()
+        scaler.step(optimizer)
+        scaler.update()
 
         if batch % 100 == 0:
             loss, current = loss.item(), batch * len(X)

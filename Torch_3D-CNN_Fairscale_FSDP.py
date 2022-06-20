@@ -5,7 +5,7 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 import torch.multiprocessing as mp
 
 from fairscale.optim.oss import OSS
-from fairscale.nn.data_parallel import ShardedDataParallel as ShardedDDP
+from fairscale.nn.data_parallel import FullyShardedDataParallel as FSDP
 
 
 CUBE_SIZE = 256
@@ -79,16 +79,15 @@ def train(
     epochs: int):
 
     # process group init
-    print(f"Running ShardedDDP example on rank {rank}.")
+    print(f"Running FSDP example on rank {rank}.")
     setup(rank, world_size)
 
     # Problem statement
     model = ThreeDCNN(width=CUBE_SIZE, height=CUBE_SIZE, depth=CUBE_SIZE, 
                   channels=NUM_CHANNELS, num_classes=NUM_CLASSES).to(rank)
-
-    # Wrap the model into ShardedDDP, which will reduce gradients to the proper ranks
-    model = ShardedDDP(model, optimizer)
-
+    # Wrap the model into FSDP, which will reduce gradients to the proper ranks
+    model = FSDP(model)
+    
     train_ds = DummyDataset(data_dims=(NUM_CHANNELS, CUBE_SIZE, CUBE_SIZE, CUBE_SIZE), 
                             num_classes=NUM_CLASSES, size=1000)
     dataloader = torch.utils.data.DataLoader(train_ds, batch_size=BATCH_SIZE, shuffle=True)
@@ -103,7 +102,6 @@ def train(
         params=model.parameters(),
         optim=base_optimizer,
         **base_optimizer_arguments)
-
 
     # Any relevant training loop, nothing specific to OSS. For example:
     model.train()

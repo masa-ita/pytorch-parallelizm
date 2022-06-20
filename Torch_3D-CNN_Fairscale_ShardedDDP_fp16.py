@@ -3,10 +3,11 @@ import torch
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
 import torch.multiprocessing as mp
+from torch.cuda.amp import autocast
 
 from fairscale.optim.oss import OSS
 from fairscale.nn.data_parallel import ShardedDataParallel as ShardedDDP
-
+from fairscale.optim.grad_scaler import ShardedGradScaler
 
 CUBE_SIZE = 256
 NUM_CHANNELS = 4
@@ -79,13 +80,12 @@ def train(
     epochs: int):
 
     # process group init
-    print(f"Running ShardedDDP example on rank {rank}.")
+    print(f"Running ShardedDDP with fp16 example on rank {rank}.")
     setup(rank, world_size)
 
     # Problem statement
     model = ThreeDCNN(width=CUBE_SIZE, height=CUBE_SIZE, depth=CUBE_SIZE, 
                   channels=NUM_CHANNELS, num_classes=NUM_CLASSES).to(rank)
-
     # Wrap the model into ShardedDDP, which will reduce gradients to the proper ranks
     model = ShardedDDP(model, optimizer)
 
@@ -104,18 +104,20 @@ def train(
         optim=base_optimizer,
         **base_optimizer_arguments)
 
-
     # Any relevant training loop, nothing specific to OSS. For example:
     model.train()
+    scaler = ShardedGradScaler()
     for e in range(epochs):
         for (data, target) in dataloader:
             data, target = data.to(rank), target.to(rank)
             # Train
             model.zero_grad()
-            outputs = model(data)
-            loss = loss_fn(outputs, target)
-            loss.backward()
-            optimizer.step()
+            with autocast():
+                outputs = model(data)
+                loss = loss_fn(outputs, target)
+            scaler.scale(loss).backward()
+            scaler.step(optimizer)
+            scaler.update()
             
     cleanup()
             
