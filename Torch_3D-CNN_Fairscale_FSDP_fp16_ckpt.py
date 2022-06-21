@@ -9,6 +9,7 @@ from fairscale.optim.oss import OSS
 from fairscale.nn.data_parallel import FullyShardedDataParallel as FSDP
 from fairscale.optim.grad_scaler import ShardedGradScaler
 from fairscale.nn.checkpoint.checkpoint_activations import checkpoint_wrapper
+from fairscale.nn import auto_wrap, default_auto_wrap_policy, enable_wrap
 
 CUBE_SIZE = 400
 NUM_CHANNELS = 4
@@ -91,7 +92,9 @@ def train(
     model = ThreeDCNN(width=CUBE_SIZE, height=CUBE_SIZE, depth=CUBE_SIZE, 
                   channels=NUM_CHANNELS, num_classes=NUM_CLASSES).to(rank)
     # Wrap the model into FSDP, which will reduce gradients to the proper ranks
-    model = FSDP(model)
+    with enable_wrap(wrapper_cls=FSDP, mixed_precision=True):
+        model = auto_wrap(model, auto_wrap_policy=default_auto_wrap_policy)
+        model = FSDP(model)
 
     train_ds = DummyDataset(data_dims=(NUM_CHANNELS, CUBE_SIZE, CUBE_SIZE, CUBE_SIZE), 
                             num_classes=NUM_CLASSES, size=1000)

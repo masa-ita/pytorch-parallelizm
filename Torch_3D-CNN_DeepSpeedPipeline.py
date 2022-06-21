@@ -39,7 +39,7 @@ def dummy_trainset(local_rank, cube_size, num_channels, num_classes):
         dist.barrier()
     
     trainset = DummyDataset(data_dims=(num_channels, cube_size, cube_size, cube_size), 
-                            num_classes=num_classes, size=500)
+                            num_classes=num_classes, size=100)
 
     if local_rank == 0:
         dist.barrier()
