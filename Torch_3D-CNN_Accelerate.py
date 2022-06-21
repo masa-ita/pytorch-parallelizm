@@ -5,14 +5,14 @@ import os
 import torch
 from accelerate import Accelerator
 
-CUBE_SIZE = 256
+CUBE_SIZE = 320
 NUM_CHANNELS = 4
 NUM_CLASSES = 10
 BATCH_SIZE = 1
 NUM_EPOCHES = 2
 
 
-accelerator = Accelerator(mixed_precision="fp16")
+accelerator = Accelerator()
 device = accelerator.device
 
 
@@ -29,9 +29,9 @@ class DummyDataset(torch.utils.data.Dataset):
     def __len__(self):
         return self.size
 
-train_ds = DummyDataset(dims=(NUM_CHANNELS, CUBE_SIZE, CUBE_SIZE, CUBE_SIZE), 
+train_ds = DummyDataset(data_dims=(NUM_CHANNELS, CUBE_SIZE, CUBE_SIZE, CUBE_SIZE), 
                         num_classes=NUM_CLASSES, size=100)
-test_ds = DummyDataset(dims=(NUM_CHANNELS, CUBE_SIZE, CUBE_SIZE, CUBE_SIZE), 
+test_ds = DummyDataset(data_dims=(NUM_CHANNELS, CUBE_SIZE, CUBE_SIZE, CUBE_SIZE), 
                        num_classes=NUM_CLASSES, size=30)
 
 train_dataloader = torch.utils.data.DataLoader(train_ds, batch_size=BATCH_SIZE, shuffle=True)

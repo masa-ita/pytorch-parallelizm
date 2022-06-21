@@ -9,7 +9,7 @@ import torch
 from accelerate import Accelerator, DeepSpeedPlugin
 
 
-CUBE_SIZE = 256
+CUBE_SIZE = 270
 NUM_CHANNELS = 4
 NUM_CLASSES = 10
 BATCH_SIZE = 2
@@ -28,14 +28,14 @@ class DummyDataset(torch.utils.data.Dataset):
         self.size = size
     
     def __getitem__(self, index):
-        return torch.rand(*self.data_dims, dtype=torch.float32), torch.randint(0, self.num_classes, (1,))[0]
+        return torch.rand(*self.data_dims, dtype=torch.float16), torch.randint(0, self.num_classes, (1,))[0]
     
     def __len__(self):
         return self.size
 
-train_ds = DummyDataset(dims=(NUM_CHANNELS, CUBE_SIZE, CUBE_SIZE, CUBE_SIZE), 
+train_ds = DummyDataset(data_dims=(NUM_CHANNELS, CUBE_SIZE, CUBE_SIZE, CUBE_SIZE), 
                         num_classes=NUM_CLASSES, size=100)
-test_ds = DummyDataset(dims=(NUM_CHANNELS, CUBE_SIZE, CUBE_SIZE, CUBE_SIZE), 
+test_ds = DummyDataset(data_dims=(NUM_CHANNELS, CUBE_SIZE, CUBE_SIZE, CUBE_SIZE), 
                        num_classes=NUM_CLASSES, size=30)
 
 
