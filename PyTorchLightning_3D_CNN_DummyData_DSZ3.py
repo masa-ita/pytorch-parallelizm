@@ -11,7 +11,7 @@ from torchmetrics import Accuracy
 from deepspeed.ops.adam import FusedAdam
 
 
-CUBE_SIZE = 512
+CUBE_SIZE = 390
 NUM_CHANNELS = 4
 NUM_CLASSES = 10
 BATCH_SIZE = 1
@@ -29,7 +29,7 @@ class DummyDataset(torch.utils.data.Dataset):
         return torch.rand(*self.data_dims, dtype=torch.float32), torch.randint(0, self.num_classes, (1,))[0]
     
     def __len__(self):
-
+        return self.size
 
 class DummyDataModule(pl.LightningDataModule):
 
@@ -43,17 +43,17 @@ class DummyDataModule(pl.LightningDataModule):
         pass
         
     def setup(self, stage):
-        self.train_ds = DummyDataset(self.dims, self.num_classes, size=500)
-        self.test_ds = DummyDataset(self.dims, self.num_classes, size=100)
+        self.train_ds = DummyDataset(self.dims, self.num_classes, size=100)
+        self.test_ds = DummyDataset(self.dims, self.num_classes, size=30)
 
     def train_dataloader(self):
-        return DataLoader(self.train_ds, batch_size=self.batch_size, shuffle=True, num_workers=4)
+        return DataLoader(self.train_ds, batch_size=self.batch_size, shuffle=True, num_workers=1)
     
     def val_dataloader(self):
-        return DataLoader(self.test_ds, batch_size=self.batch_size, shuffle=False, num_workers=4)
+        return DataLoader(self.test_ds, batch_size=self.batch_size, shuffle=False, num_workers=1)
 
     def test_dataloader(self):
-        return DataLoader(self.test_ds, batch_size=self.batch_size, shuffle=False, num_workers=4)
+        return DataLoader(self.test_ds, batch_size=self.batch_size, shuffle=False, num_workers=1)
 
 
 class ThreeDCNN(pl.LightningModule):

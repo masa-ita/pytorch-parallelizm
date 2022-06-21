@@ -10,7 +10,7 @@ from torchmetrics import Accuracy
 from pytorch_lightning.strategies import DeepSpeedStrategy
 from deepspeed.ops.adam import DeepSpeedCPUAdam
 
-CUBE_SIZE = 256
+CUBE_SIZE = 320
 NUM_CHANNELS = 4
 NUM_CLASSES = 10
 BATCH_SIZE = 1
@@ -43,17 +43,17 @@ class DummyDataModule(pl.LightningDataModule):
         pass
         
     def setup(self, stage):
-        self.train_ds = DummyDataset(self.dims, self.num_classes, size=1000)
-        self.test_ds = DummyDataset(self.dims, self.num_classes, size=100)
+        self.train_ds = DummyDataset(self.dims, self.num_classes, size=100)
+        self.test_ds = DummyDataset(self.dims, self.num_classes, size=30)
 
     def train_dataloader(self):
-        return DataLoader(self.train_ds, batch_size=self.batch_size, shuffle=True, num_workers=4)
+        return DataLoader(self.train_ds, batch_size=self.batch_size, shuffle=True, num_workers=1)
     
     def val_dataloader(self):
-        return DataLoader(self.test_ds, batch_size=self.batch_size, shuffle=False, num_workers=4)
+        return DataLoader(self.test_ds, batch_size=self.batch_size, shuffle=False, num_workers=1)
 
     def test_dataloader(self):
-        return DataLoader(self.test_ds, batch_size=self.batch_size, shuffle=False, num_workers=4)
+        return DataLoader(self.test_ds, batch_size=self.batch_size, shuffle=False, num_workers=1)
 
 
 class ThreeDCNN(pl.LightningModule):

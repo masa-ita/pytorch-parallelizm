@@ -16,7 +16,7 @@ from torch.cuda.amp import GradScaler
 import fairscale
 
 
-CUBE_SIZE = 256
+CUBE_SIZE = 310
 NUM_CHANNELS = 4
 NUM_CLASSES = 10
 BATCH_SIZE = 1
