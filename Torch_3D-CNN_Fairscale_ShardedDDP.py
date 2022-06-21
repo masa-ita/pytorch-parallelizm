@@ -8,12 +8,12 @@ from fairscale.optim.oss import OSS
 from fairscale.nn.data_parallel import ShardedDataParallel as ShardedDDP
 
 
-CUBE_SIZE = 256
+CUBE_SIZE = 320
 NUM_CHANNELS = 4
 NUM_CLASSES = 10
 BATCH_SIZE = 1
 
-WORLD_SIZE = 1
+WORLD_SIZE = 4
 EPOCHS = 2
 
 
@@ -86,9 +86,6 @@ def train(
     model = ThreeDCNN(width=CUBE_SIZE, height=CUBE_SIZE, depth=CUBE_SIZE, 
                   channels=NUM_CHANNELS, num_classes=NUM_CLASSES).to(rank)
 
-    # Wrap the model into ShardedDDP, which will reduce gradients to the proper ranks
-    model = ShardedDDP(model, optimizer)
-
     train_ds = DummyDataset(data_dims=(NUM_CHANNELS, CUBE_SIZE, CUBE_SIZE, CUBE_SIZE), 
                             num_classes=NUM_CLASSES, size=1000)
     dataloader = torch.utils.data.DataLoader(train_ds, batch_size=BATCH_SIZE, shuffle=True)
@@ -104,6 +101,9 @@ def train(
         optim=base_optimizer,
         **base_optimizer_arguments)
 
+
+    # Wrap the model into ShardedDDP, which will reduce gradients to the proper ranks
+    model = ShardedDDP(model, optimizer)
 
     # Any relevant training loop, nothing specific to OSS. For example:
     model.train()

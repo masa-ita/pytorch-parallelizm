@@ -13,7 +13,7 @@ NUM_CHANNELS = 4
 NUM_CLASSES = 10
 BATCH_SIZE = 1
 
-WORLD_SIZE = 1
+WORLD_SIZE = 2
 EPOCHS = 2
 
 
@@ -22,7 +22,7 @@ def setup(rank, world_size):
     os.environ['MASTER_PORT'] = '12355'
 
     # initialize the process group
-    dist.init_process_group("gloo", rank=rank, world_size=world_size)
+    dist.init_process_group("nccl", rank=rank, world_size=world_size)
 
 def cleanup():
     dist.destroy_process_group()

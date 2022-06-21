@@ -10,7 +10,7 @@ from fairscale.optim.grad_scaler import ShardedGradScaler
 from fairscale.nn.checkpoint.checkpoint_activations import checkpoint_wrapper
 from fairscale.experimental.nn.offload import OffloadModel
 
-CUBE_SIZE = 256
+CUBE_SIZE = 360
 NUM_CHANNELS = 4
 NUM_CLASSES = 10
 BATCH_SIZE = 1
@@ -24,7 +24,7 @@ def setup(rank, world_size):
     os.environ['MASTER_PORT'] = '12355'
 
     # initialize the process group
-    dist.init_process_group("gloo", rank=rank, world_size=world_size)
+    dist.init_process_group("nccl", rank=rank, world_size=world_size)
 
 def cleanup():
     dist.destroy_process_group()
@@ -77,7 +77,7 @@ def train(
     epochs: int):
 
     # process group init
-    print(f"Running basic DDP example on rank {rank}.")
+    print(f"Running FairScale Offload Model example on rank {rank}.")
     setup(rank, world_size)
 
     # Problem statement

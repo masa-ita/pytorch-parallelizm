@@ -4,12 +4,12 @@ import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
 import torch.multiprocessing as mp
 
-CUBE_SIZE = 256
+CUBE_SIZE = 320
 NUM_CHANNELS = 4
 NUM_CLASSES = 10
 BATCH_SIZE = 1
 
-WORLD_SIZE = 1
+WORLD_SIZE = 4
 EPOCHS = 2
 
 
@@ -25,7 +25,7 @@ def cleanup():
 
 class DummyDataset(torch.utils.data.Dataset):
 
-    def __init__(self, data_dims=(4, 128, 128, 128), num_classes=10, size=1000):
+    def __init__(self, data_dims=(4, 128, 128, 128), num_classes=10, size=100):
         self.data_dims = data_dims
         self.num_classes = num_classes
         self.size = size
