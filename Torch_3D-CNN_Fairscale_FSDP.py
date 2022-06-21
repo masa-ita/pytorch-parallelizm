@@ -112,7 +112,7 @@ def train(
         for (data, target) in dataloader:
             data, target = data.to(rank), target.to(rank)
             # Train
-            model.zero_grad()
+            model.zero_grad(set_to_none=True)
             outputs = model(data)
             loss = loss_fn(outputs, target)
             loss.backward()
