@@ -38,6 +38,7 @@ train_dataloader = torch.utils.data.DataLoader(train_ds, batch_size=BATCH_SIZE, 
 test_dataloader = torch.utils.data.DataLoader(test_ds, batch_size=BATCH_SIZE, shuffle=False)
 
 class ThreeDCNN(torch.nn.Module):
+    
     def __init__(self, width=128, height=128, depth=128, channels=1, num_classes=1):
         super(ThreeDCNN, self).__init__()
         self.layers = torch.nn.Sequential(
@@ -73,10 +74,12 @@ class ThreeDCNN(torch.nn.Module):
 model = ThreeDCNN(width=CUBE_SIZE, height=CUBE_SIZE, depth=CUBE_SIZE, 
                   channels=NUM_CHANNELS, num_classes=NUM_CLASSES)
 
+model = accelerator.prepare(model)
+
 loss_fn = torch.nn.CrossEntropyLoss()
 optimizer = torch.optim.SGD(model.parameters(), lr=1e-3)
 
-model, optimizer, train_dataloader, test_dataloader = accelerator.prepare(model, optimizer, train_dataloader, test_dataloader)
+optimizer, train_dataloader, test_dataloader = accelerator.prepare(optimizer, train_dataloader, test_dataloader)
 
 
 def train(dataloader, model, loss_fn, optimizer):
