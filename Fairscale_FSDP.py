@@ -3,6 +3,8 @@ import numpy as np
 import logging
 import time
 import math
+from functools import reduce
+import operator
 
 import torch
 import torch.distributed as dist
@@ -13,9 +15,14 @@ from torch.optim import Adam
 from fairscale.nn import auto_wrap, default_auto_wrap_policy, enable_wrap
 from fairscale.nn.data_parallel import FullyShardedDataParallel as FSDP
 from fairscale.nn.data_parallel import OffloadConfig
+from fairscale.nn.checkpoint.checkpoint_activations import checkpoint_wrapper
 
 RPC_PORT = 29501
 
+CUBE_SIZE = 256
+NUM_CHANNELS = 4
+NUM_CLASSES = 10
+BATCH_SIZE = 1
 
 def init_random_seed(seed: int):
 
@@ -26,13 +33,18 @@ def init_random_seed(seed: int):
 
 class DummyDataset(torch.utils.data.Dataset):
 
-    def __init__(self, data_dims=(4, 128, 128, 128), num_classes=10, size=100):
+    def __init__(self, data_dims=(4, 128, 128, 128), num_classes=10, size=100, fp16=False):
         self.data_dims = data_dims
         self.num_classes = num_classes
         self.size = size
-    
+        self.fp16 = fp16
+
     def __getitem__(self, index):
-        return torch.rand(*self.data_dims, dtype=torch.float32), torch.randint(0, self.num_classes, (1,))[0]
+        input = torch.rand(*self.data_dims, dtype=torch.float32)
+        target = torch.randint(0, self.num_classes, (1,))[0]
+        if self.fp16:
+            input = input.half()
+        return input, target
     
     def __len__(self):
         return self.size
@@ -42,11 +54,11 @@ def get_dataloaders(args, device, fsdp_config, model_specs):
     """Returns dataloaders for real data."""
 
     train_ds = DummyDataset(data_dims=(NUM_CHANNELS, CUBE_SIZE, CUBE_SIZE, CUBE_SIZE), 
-                            num_classes=NUM_CLASSES, size=100)
+                            num_classes=NUM_CLASSES, size=100, fp16=args.full_fp16)
     valid_ds = DummyDataset(data_dims=(NUM_CHANNELS, CUBE_SIZE, CUBE_SIZE, CUBE_SIZE), 
-                            num_classes=NUM_CLASSES, size=20)
+                            num_classes=NUM_CLASSES, size=20, fp16=args.full_fp16)
     test_ds  = DummyDataset(data_dims=(NUM_CHANNELS, CUBE_SIZE, CUBE_SIZE, CUBE_SIZE), 
-                            num_classes=NUM_CLASSES, size=20)
+                            num_classes=NUM_CLASSES, size=20, fp16=args.full_fp16)
     
     train_dataloader = torch.utils.data.DataLoader(train_ds, batch_size=BATCH_SIZE, shuffle=True)
     valid_dataloader = torch.utils.data.DataLoader(valid_ds, batch_size=BATCH_SIZE, shuffle=True)
@@ -106,7 +118,7 @@ def get_model_and_optimizer(args, device, fsdp_config, model_config):
 
     model = get_model(args, device, model_config)
 
-    lr = benchmark_config["lr"]
+    lr = fsdp_config["lr"]
 
     def make_adam(params):
         return Adam(params, lr=lr)
@@ -122,8 +134,8 @@ def create_model_config(args, fsdp_config=None, model_specs=None):
 
     dataloader_fn = get_dataloaders
 
-    data = dataloader_fn(args, device, model_specs)
-    model, optimizer = get_model_and_optimizer(args, device, model_specs)
+    data = dataloader_fn(args, device, fsdp_config, model_specs)
+    model, optimizer = get_model_and_optimizer(args, device, fsdp_config, model_specs)
     return {
         "model": model,
         "optimizer": optimizer,
@@ -131,13 +143,34 @@ def create_model_config(args, fsdp_config=None, model_specs=None):
     }
     
     
-def create_fsdp_config(model_name):
+def create_fsdp_config():
     """Return a dict with configurations required for `model_name` model."""
-
-    return dict()
+    fsdp_config = {"lr": 1e-3, "epochs": 2}
+    fsdp_config["criterion"] = torch.nn.CrossEntropyLoss()
+    return fsdp_config
     
 def get_model_specs():
-    return dict()
+    model_spec = {"clip_value": 32768.0}
+    return model_spec
+
+
+def log_number_of_parameters(model):
+
+    num_params = reduce(operator.add, (reduce(operator.mul, x.size()) for x in model.parameters()))
+    if hasattr(model, "group"):
+        total = torch.Tensor([num_params])
+        if torch.cuda.is_available():
+            total = total.cuda()
+        torch.distributed.all_reduce(total, group=model.group)
+        print(
+            f"training model, #params = {num_params/10**6}M, group: {model.group.rank()}, grank:"
+            f" {torch.distributed.get_rank()}, sizes {model.group.size()}"
+        )
+        torch.distributed.barrier()
+        if model.group.rank() == 0:
+            print(f"total #prams = {total.item()}")
+    else:
+        print(f"training model, #params = {num_params/10**6}M")
 
     
 def train(model_config, model, fsdp_config, model_specs, args):
@@ -145,8 +178,7 @@ def train(model_config, model, fsdp_config, model_specs, args):
     criterion = fsdp_config["criterion"]
     optimizer = model_config["optimizer"]
 
-    if not args.benchmark_eval:
-        model.train()
+    model.train()
     log_number_of_parameters(model)
 
     total_loss = 0.0
@@ -159,10 +191,7 @@ def train(model_config, model, fsdp_config, model_specs, args):
     epoch_start_time = 0.0
 
     def get_batch(source):
-        seq_len = len(source) - 1
-        data = source[0:seq_len]
-        target = source[1 : 1 + seq_len]
-        return data, target
+        return source[0], source[1]
 
     for i, batch in enumerate(dataloader):
         if i == 1:
@@ -186,8 +215,10 @@ def train(model_config, model, fsdp_config, model_specs, args):
             input = source.cuda()
             target = target.cuda()
             output = model(input)
-
-            loss = criterion(output.view(-1), target.view(-1))
+            if args.full_fp16:
+                input = input.float()
+                target = target.float()
+            loss = criterion(output, target)
             loss.backward()
 
             torch.nn.utils.clip_grad_value_(model.parameters(), model_specs["clip_value"])
@@ -279,7 +310,7 @@ def dummy_fsdp(rank, args, world_size):
 
 
 parser = argparse.ArgumentParser(description="FairScale")
-parser.add_argument("--max_batch", type=int, default=4, help="Max number of batches")
+parser.add_argument("--max_batch", type=int, default=30, help="Max number of batches")
 parser.add_argument("--dry_run", action="store_true", help="Run a sample training run without regression testing.")
 parser.add_argument("--debug", action="store_true", default=False, help="Display additional debug information")
 parser.add_argument("--enable_auto_wrap", action="store_true", default=False, help="Use auto_wrap with FSDP")
