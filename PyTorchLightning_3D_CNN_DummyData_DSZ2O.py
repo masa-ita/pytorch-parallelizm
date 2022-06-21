@@ -1,13 +1,6 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# In[ ]:
-
-
-import os
-from glob import glob
-import re
-import numpy as np
 import torch
 from torch.nn import functional as F
 from torch.utils.data import Dataset, DataLoader
@@ -17,38 +10,25 @@ from torchmetrics import Accuracy
 from pytorch_lightning.strategies import DeepSpeedStrategy
 from deepspeed.ops.adam import DeepSpeedCPUAdam
 
-# In[ ]:
-
-
 CUBE_SIZE = 256
 NUM_CHANNELS = 4
 NUM_CLASSES = 10
 BATCH_SIZE = 1
 NUM_EPOCHES = 2
-DIRECTORY = '/srv/datasets/modelnet'
-
-categories = ['bathtub', 'bed', 'chair', 'desk', 'dresser',
-              'monitor', 'night_stand', 'sofa', 'table', 'toilet']
 
 
-# In[ ]:
+class DummyDataset(torch.utils.data.Dataset):
 
-
-class DummyDataset(Dataset):
-
-    def __init__(self, dims=(4, 128, 128, 128), num_classes=10, size=1000):
-        self.dims = dims
+    def __init__(self, data_dims=(4, 128, 128, 128), num_classes=10, size=100):
+        self.data_dims = data_dims
         self.num_classes = num_classes
         self.size = size
     
     def __getitem__(self, index):
-        return np.random.rand(*self.dims).astype(np.float32), np.random.randint(0, self.num_classes)
+        return torch.rand(*self.data_dims, dtype=torch.float32), torch.randint(0, self.num_classes, (1,))[0]
     
     def __len__(self):
         return self.size
-
-
-# In[ ]:
 
 
 class DummyDataModule(pl.LightningDataModule):
@@ -76,18 +56,16 @@ class DummyDataModule(pl.LightningDataModule):
         return DataLoader(self.test_ds, batch_size=self.batch_size, shuffle=False, num_workers=4)
 
 
-# In[ ]:
-
-
 class ThreeDCNN(pl.LightningModule):
+    
     def __init__(self, width=128, height=128, depth=128, channels=1, num_classes=1):
         super(ThreeDCNN, self).__init__()
         self.layers = torch.nn.Sequential(
-            torch.nn.Conv3d(channels, 64, 3),
+            torch.nn.Conv3d(channels, 32, 3),
             torch.nn.ReLU(),
             torch.nn.MaxPool3d(2),
-            torch.nn.BatchNorm3d(64),
-            torch.nn.Conv3d(64, 64, 3),
+            torch.nn.BatchNorm3d(32),
+            torch.nn.Conv3d(32, 64, 3),
             torch.nn.ReLU(),
             torch.nn.MaxPool3d(2),
             torch.nn.BatchNorm3d(64),
@@ -136,17 +114,8 @@ class ThreeDCNN(pl.LightningModule):
         return SGD(self.parameters(), lr=1e-4)
 
 
-# In[ ]:
-
 strategy = DeepSpeedStrategy(offload_optimizer=True, allgather_bucket_size=5e8, reduce_bucket_size=5e8)
 dm = DummyDataModule(dims=(NUM_CHANNELS, CUBE_SIZE, CUBE_SIZE, CUBE_SIZE), num_classes=NUM_CLASSES, batch_size=BATCH_SIZE)
 model = ThreeDCNN(width=CUBE_SIZE, height=CUBE_SIZE, depth=CUBE_SIZE, channels=NUM_CHANNELS, num_classes=NUM_CLASSES)
 trainer = pl.Trainer(devices=[0,1,2,3], accelerator="gpu", precision=16, max_epochs=NUM_EPOCHES, strategy=strategy)
 trainer.fit(model, dm)
-
-
-# In[ ]:
-
-
-
-

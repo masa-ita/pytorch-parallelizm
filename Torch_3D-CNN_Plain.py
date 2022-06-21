@@ -8,7 +8,7 @@ NUM_EPOCHES = 5
 
 class DummyDataset(torch.utils.data.Dataset):
 
-    def __init__(self, data_dims=(4, 128, 128, 128), num_classes=10, size=1000):
+    def __init__(self, data_dims=(4, 128, 128, 128), num_classes=10, size=100):
         self.data_dims = data_dims
         self.num_classes = num_classes
         self.size = size
@@ -21,7 +21,7 @@ class DummyDataset(torch.utils.data.Dataset):
 
 
 train_ds = DummyDataset(data_dims=(NUM_CHANNELS, CUBE_SIZE, CUBE_SIZE, CUBE_SIZE), 
-                        num_classes=NUM_CLASSES, size=1000)
+                        num_classes=NUM_CLASSES, size=100)
 
 train_dataloader = torch.utils.data.DataLoader(train_ds, batch_size=BATCH_SIZE, shuffle=True)
 
