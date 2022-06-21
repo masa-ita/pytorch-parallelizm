@@ -94,7 +94,7 @@ def train(
     # Wrap the model into FSDP, which will reduce gradients to the proper ranks
     with enable_wrap(wrapper_cls=FSDP, mixed_precision=True):
         model = auto_wrap(model, auto_wrap_policy=default_auto_wrap_policy)
-        model = FSDP(model)
+        model = FSDP(model, mixed_precision=True)
 
     train_ds = DummyDataset(data_dims=(NUM_CHANNELS, CUBE_SIZE, CUBE_SIZE, CUBE_SIZE), 
                             num_classes=NUM_CLASSES, size=1000)
@@ -118,7 +118,7 @@ def train(
         for (data, target) in dataloader:
             data, target = data.to(rank), target.to(rank)
             # Train
-            model.zero_grad()
+            model.zero_grad(set_to_none=True)
             with autocast():
                 outputs = model(data)
                 loss = loss_fn(outputs, target)
