@@ -92,11 +92,13 @@ class ThreeDCNN(torch.nn.Module):
             torch.nn.Linear(256, 128),
             torch.nn.ReLU(),
             torch.nn.Dropout(p=0.3),
-            torch.nn.Linear(128, num_classes)
         )
+        self.layers = checkpoint_wrapper(self.layers)
+        self.last_layer = torch.nn.Linear(128, num_classes)
 
     def forward(self, x):
         x = self.layers(x)
+        x = self.last_layer(x)
         return x
     
 
@@ -285,10 +287,7 @@ def dummy_fsdp(rank, args, world_size):
 
     if args.enable_auto_wrap:
         with enable_wrap(wrapper_cls=FSDP, **config):
-            if args.enable_checkpoint:
-                fsdp_model = auto_wrap(checkpoint_wrapper(model), auto_wrap_policy=default_auto_wrap_policy)
-            else:
-                fsdp_model = auto_wrap(model, auto_wrap_policy=default_auto_wrap_policy)
+            fsdp_model = auto_wrap(model, auto_wrap_policy=default_auto_wrap_policy)
             fsdp_model = FSDP(fsdp_model, **config)
     else:
         fsdp_model = FSDP(model, **config)
@@ -305,7 +304,6 @@ parser.add_argument("--max_batch", type=int, default=30, help="Max number of bat
 parser.add_argument("--dry_run", action="store_true", help="Run a sample training run without regression testing.")
 parser.add_argument("--debug", action="store_true", default=False, help="Display additional debug information")
 parser.add_argument("--enable_auto_wrap", action="store_true", default=False, help="Use auto_wrap with FSDP")
-parser.add_argument("--enable_chepoint", action="store_true", default=False, help="Use checkpoint with FSDP")
 parser.add_argument("--ssd_offload", action="store_true", default=False, help="Benchmark ssd_offload workflow.")
 parser.add_argument("--mixed_precision", action="store_true", default=False, help="mixed precision mode.")
 

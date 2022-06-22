@@ -24,7 +24,7 @@ class DummyDataset(torch.utils.data.Dataset):
         self.size = size
     
     def __getitem__(self, index):
-        return torch.rand(*self.data_dims, dtype=torch.float32), torch.randint(0, self.num_classes, (1,))[0]
+        return torch.rand(*self.data_dims, dtype=torch.float16), torch.randint(0, self.num_classes, (1,))[0]
     
     def __len__(self):
         return self.size
@@ -74,12 +74,12 @@ class ThreeDCNN(torch.nn.Module):
 model = ThreeDCNN(width=CUBE_SIZE, height=CUBE_SIZE, depth=CUBE_SIZE, 
                   channels=NUM_CHANNELS, num_classes=NUM_CLASSES)
 
-model = accelerator.prepare(model)
-
 loss_fn = torch.nn.CrossEntropyLoss()
 optimizer = torch.optim.SGD(model.parameters(), lr=1e-3)
 
-optimizer, train_dataloader, test_dataloader = accelerator.prepare(optimizer, train_dataloader, test_dataloader)
+model, optimizer, train_dataloader, test_dataloader = \
+    accelerator.prepare(model, optimizer, train_dataloader, test_dataloader)
+
 
 
 def train(dataloader, model, loss_fn, optimizer):
