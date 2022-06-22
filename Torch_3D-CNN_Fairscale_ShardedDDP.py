@@ -5,19 +5,11 @@ import torch
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
 import torch.multiprocessing as mp
+from torch.cuda.amp import autocast
 
 from fairscale.optim.oss import OSS
 from fairscale.nn.data_parallel import ShardedDataParallel as ShardedDDP
 from fairscale.optim.grad_scaler import ShardedGradScaler
-
-
-CUBE_SIZE = 320
-NUM_CHANNELS = 4
-NUM_CLASSES = 10
-BATCH_SIZE = 1
-
-WORLD_SIZE = 4
-EPOCHS = 2
 
 
 def setup(rank, world_size):
@@ -128,7 +120,7 @@ def train(
             
 def run_demo(demo_fn, args):
     mp.spawn(demo_fn,
-             args=args,
+             args=(args,),
              nprocs=args.world_size,
              join=True)
     
