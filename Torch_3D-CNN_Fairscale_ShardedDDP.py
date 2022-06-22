@@ -1,4 +1,6 @@
 import os
+import argparse
+
 import torch
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
@@ -6,6 +8,7 @@ import torch.multiprocessing as mp
 
 from fairscale.optim.oss import OSS
 from fairscale.nn.data_parallel import ShardedDataParallel as ShardedDDP
+from fairscale.optim.grad_scaler import ShardedGradScaler
 
 
 CUBE_SIZE = 320
@@ -75,27 +78,29 @@ class ThreeDCNN(torch.nn.Module):
     
 def train(
     rank: int,
-    world_size: int,
-    epochs: int):
+    args):
 
     # process group init
     print(f"Running ShardedDDP example on rank {rank}.")
-    setup(rank, world_size)
+    setup(rank, args.world_size)
 
     # Problem statement
-    model = ThreeDCNN(width=CUBE_SIZE, height=CUBE_SIZE, depth=CUBE_SIZE, 
-                  channels=NUM_CHANNELS, num_classes=NUM_CLASSES).to(rank)
+    model = ThreeDCNN(width=args.cube_size, height=args.cube_size, depth=args.cube_size, 
+                  channels=args.num_channels, num_classes=args.num_classes).to(rank)
 
-    train_ds = DummyDataset(data_dims=(NUM_CHANNELS, CUBE_SIZE, CUBE_SIZE, CUBE_SIZE), 
-                            num_classes=NUM_CLASSES, size=1000)
-    dataloader = torch.utils.data.DataLoader(train_ds, batch_size=BATCH_SIZE, shuffle=True)
+    train_ds = DummyDataset(data_dims=(args.num_channels, args.cube_size, args.cube_size, args.cube_size), 
+                            num_classes=args.num_classes, size=100)
+    dataloader = torch.utils.data.DataLoader(train_ds, batch_size=args.batch_size, shuffle=True)
     loss_fn = torch.nn.CrossEntropyLoss()
 
     # optimizer specific arguments e.g. LR, momentum, etc...
     base_optimizer_arguments = { "lr": 1e-4}
 
     # Wrap a base optimizer into OSS
-    base_optimizer = torch.optim.SGD  # any pytorch compliant optimizer
+    if args.optimizer == 'adam':
+        base_optimizer = torch.optim.Adam
+    else:
+        base_optimizer = torch.optim.SGD  # any pytorch compliant optimizer
     optimizer = OSS(
         params=model.parameters(),
         optim=base_optimizer,
@@ -107,23 +112,67 @@ def train(
 
     # Any relevant training loop, nothing specific to OSS. For example:
     model.train()
-    for e in range(epochs):
+    scaler = ShardedGradScaler()
+    for e in range(args.epochs):
         for (data, target) in dataloader:
             data, target = data.to(rank), target.to(rank)
             # Train
             model.zero_grad()
-            outputs = model(data)
-            loss = loss_fn(outputs, target)
-            loss.backward()
-            optimizer.step()
-            
+            with autocast(enabled=args.mixed_precision):
+                outputs = model(data)
+                loss = loss_fn(outputs, target)
+            scaler.scale(loss).backward()
+            scaler.step(optimizer)
+            scaler.update()           
     cleanup()
             
-def run_demo(demo_fn, world_size, epochs):
+def run_demo(demo_fn, args):
     mp.spawn(demo_fn,
-             args=(world_size, epochs),
-             nprocs=world_size,
+             args=args,
+             nprocs=args.world_size,
              join=True)
+    
+
+def get_args():
+    parser = argparse.ArgumentParser(description='3DCNN FairScale')
+    parser.add_argument('--cube_size',
+                        type=int,
+                        default=128,
+                        help='dummy data cube size')
+    parser.add_argument('--num_channels',
+                        type=int,
+                        default=4,
+                        help='dummy data channel size')
+    parser.add_argument('--num_classes',
+                        type=int,
+                        default=10,
+                        help='dummy data number of classes')
+    parser.add_argument('--batch_size',
+                        type=int,
+                        default=1,
+                        help='batch size')
+    parser.add_argument('--optimizer',
+                        type=str,
+                        default="sgd",
+                        help='optimizer [sgd, adam]')
+    parser.add_argument('--mixed_precision',
+                        action="store_true",
+                        default=False,
+                        help="mixed precision mode.")
+    parser.add_argument('--world_size',
+                        type=int,
+                        default=4,
+                        help='multi processing world size')
+    parser.add_argument('--epochs',
+                        type=int,
+                        default=1,
+                        help='training epoch size')
+
+    args = parser.parse_args()
+    print(args)
+    return args
+
 
 if __name__ == '__main__':
-    run_demo(train, WORLD_SIZE, EPOCHS)
+    args = get_args()
+    run_demo(train, args)
