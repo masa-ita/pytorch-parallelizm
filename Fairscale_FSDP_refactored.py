@@ -19,11 +19,6 @@ from fairscale.nn.checkpoint.checkpoint_activations import checkpoint_wrapper
 
 RPC_PORT = 29501
 
-CUBE_SIZE = 380
-NUM_CHANNELS = 4
-NUM_CLASSES = 10
-BATCH_SIZE = 1
-
 def init_random_seed(seed: int):
 
     torch.manual_seed(seed)
@@ -103,7 +98,7 @@ def log_number_of_parameters(model):
         print(f"training model, #params = {num_params/10**6}M")
 
     
-def train(model, dataloader, criterion, optimizer, model_spec, args):
+def train(model, dataloader, criterion, optimizer, model_specs, args):
 
     model.train()
     log_number_of_parameters(model)
@@ -130,8 +125,7 @@ def train(model, dataloader, criterion, optimizer, model_spec, args):
             input = source.cuda()
             target = target.cuda()
             output = model(input)
-            print(f"output.dtype {output.dtype}, target.dtype {target.dtype}")
-            loss = torch.nn.CrossEntropyLoss()(output.view(-1), target.view(-1))
+            loss = torch.nn.CrossEntropyLoss()(output, target)
         else:
             optimizer.zero_grad()
             input = source.cuda()

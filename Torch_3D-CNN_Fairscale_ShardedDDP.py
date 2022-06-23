@@ -10,6 +10,8 @@ from torch.cuda.amp import autocast
 from fairscale.optim.oss import OSS
 from fairscale.nn.data_parallel import ShardedDataParallel as ShardedDDP
 from fairscale.optim.grad_scaler import ShardedGradScaler
+from fairscale.nn.checkpoint.checkpoint_activations import checkpoint_wrapper
+from fairscale.nn import auto_wrap, default_auto_wrap_policy, enable_wrap
 
 
 def setup(rank, world_size):
@@ -100,7 +102,11 @@ def train(
 
 
     # Wrap the model into ShardedDDP, which will reduce gradients to the proper ranks
-    model = ShardedDDP(model, optimizer)
+    if args.checkpointing:
+        with enable_wrap(wrapper_cls=ShardedDDP):
+            model = ShardedDDP(auto_wrap(checkpoint_wrapper(model), auto_wrap_policy=default_auto_wrap_policy), optimizer)
+    else:
+        model = ShardedDDP(model, optimizer)
 
     # Any relevant training loop, nothing specific to OSS. For example:
     model.train()
@@ -151,6 +157,10 @@ def get_args():
                         action="store_true",
                         default=False,
                         help="mixed precision mode.")
+    parser.add_argument('--checkpointing',
+                        action="store_true",
+                        default=False,
+                        help="enable activation checkpointing")
     parser.add_argument('--world_size',
                         type=int,
                         default=4,
